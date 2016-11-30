@@ -31,6 +31,7 @@ AC_PROG_CC([icc cc gcc])
 SXE_CHECK_CC([gnu11 gnu1x gnu99])
 SXE_CHECK_CFLAGS
 AC_C_BIGENDIAN
+AC_PROG_RANLIB
 
 ## check if yuck is globally available
 AX_CHECK_YUCK
