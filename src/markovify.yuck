@@ -1,0 +1,5 @@
+Usage: markovify < SPREADS
+
+Generate a markov chain from SPREADS.
+
+   --arity=N            Arity of markov chain, default: 1.
