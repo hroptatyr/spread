@@ -108,7 +108,7 @@ Warning: quantum has changed");
 }
 
 static int
-addchain(void)
+add_chain(void)
 {
 	size_t k = 0U;
 
@@ -126,7 +126,7 @@ addchain(void)
 }
 
 static int
-prchain(bool rawp)
+prnt_chain(bool rawp)
 {
 	ssize_t(*ixtostr)(char*restrict, size_t, size_t idx);
 
@@ -241,16 +241,17 @@ Info: arity=8 needs 8TB RAM, arity=9 would need 256TB RAM");
 			if (UNLIKELY(push_beef(line, nrd) < 0)) {
 				;
 			} else {
-				addchain();
+				add_chain();
 			}
 		}
 
 		free(line);
 
 		/* print results */
-		prchain(!!argi->raw_flag);
+		rc = prnt_chain(!!argi->raw_flag) < 0;
 	}
 
+	/* no need for that chain no more */
 	free(chain);
 
 out:
