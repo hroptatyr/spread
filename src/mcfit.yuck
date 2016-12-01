@@ -1,4 +1,4 @@
-Usage: markovify < SPREADS
+Usage: mcfit < SPREADS
 
 Generate a markov chain from SPREADS.
 

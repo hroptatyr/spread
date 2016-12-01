@@ -194,7 +194,7 @@ prchain(bool rawp)
 }
 
 
-#include "markovify.yucc"
+#include "mcfit.yucc"
 
 int
 main(int argc, char *argv[])
@@ -258,4 +258,4 @@ out:
 	return rc;
 }
 
-/* markovify.c ends here */
+/* mcfit.c ends here */

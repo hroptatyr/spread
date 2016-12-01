@@ -27,16 +27,16 @@ libdfp_a_SOURCES += dfp754_d64.c dfp754_d64.h
 libdfp_a_CPPFLAGS = $(AM_CPPFLAGS)
 libdfp_a_CPPFLAGS += $(dfp754_CFLAGS)
 
-bin_PROGRAMS += markovify
-markovify_SOURCES = markovify.c markovify.yuck
-markovify_SOURCES += version.c version.h
-markovify_CPPFLAGS = $(AM_CPPFLAGS)
-markovify_CPPFLAGS += $(dfp754_CFLAGS)
-markovify_CPPFLAGS += -DHAVE_VERSION_H
-markovify_LDFLAGS = $(AM_LDFLAGS)
-markovify_LDFLAGS += $(dfp754_LIBS)
-markovify_LDADD = libdfp.a
-BUILT_SOURCES += markovify.yucc
+bin_PROGRAMS += mcfit
+mcfit_SOURCES = mcfit.c mcfit.yuck
+mcfit_SOURCES += version.c version.h
+mcfit_CPPFLAGS = $(AM_CPPFLAGS)
+mcfit_CPPFLAGS += $(dfp754_CFLAGS)
+mcfit_CPPFLAGS += -DHAVE_VERSION_H
+mcfit_LDFLAGS = $(AM_LDFLAGS)
+mcfit_LDFLAGS += $(dfp754_LIBS)
+mcfit_LDADD = libdfp.a
+BUILT_SOURCES += mcfit.yucc
 
 
 ## version rules
