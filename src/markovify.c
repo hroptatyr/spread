@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <errno.h>
 #if defined HAVE_DFP754_H
 # include <dfp754.h>
@@ -125,9 +126,52 @@ addchain(void)
 }
 
 static int
-prchain(void)
+prchain(bool rawp)
 {
-/* calculate totals first, use 0 slot to store them */
+	ssize_t(*ixtostr)(char*restrict, size_t, size_t idx);
+
+	static ssize_t ixtopstr(char *restrict buf, size_t bsz, size_t i)
+	{
+		size_t len = 0U;
+
+		for (size_t j = arity; --j;) {
+			const hx_t h = (i >> (5U * j)) % 32U;
+			const px_t p = hxtopx(h, qunt);
+
+			len += pxtostr(buf + len, bsz - len, p);
+			buf[len++] = '\t';
+		}
+		/* last one is special */
+		if (i % 32U) {
+			const hx_t h = i % 32U;
+			const px_t p = hxtopx(h, qunt);
+
+			len += pxtostr(buf + len, bsz - len, p);
+			buf[len++] = '\t';
+		} else {
+			memcpy(buf + len, "tot\t", 4U);
+			len += 4U;
+		}
+		return len;
+	}
+
+	static ssize_t ixtoistr(char *restrict buf, size_t bsz, size_t i)
+	{
+		size_t len = 0U;
+
+		for (size_t j = arity; j--;) {
+			const hx_t h = (i >> (5U * j)) % 32U;
+
+			len += snprintf(buf + len, bsz - len, "%u", h);
+			buf[len++] = '\t';
+		}
+		return len;
+	}
+
+	/* which index printer to use */
+	ixtostr = !rawp ? ixtopstr : ixtoistr;
+
+	/* calculate totals first, use 0 slot to store them */
 	for (size_t i = 0U, n = 1ULL << (5U * arity); i < n; i += 32U) {
 		chain[i] = 0U;
 		for (size_t j = 1U; j < 32U; j++) {
@@ -141,13 +185,7 @@ prchain(void)
 		if (LIKELY(!chain[i])) {
 			continue;
 		}
-		for (size_t j = arity; j--;) {
-			const hx_t h = (i >> (5U * j)) % 32U;
-			const px_t p = hxtopx(h, qunt);
-
-			len += pxtostr(buf + len, sizeof(buf) - len, p);
-			buf[len++] = '\t';
-		}
+		len += ixtostr(buf + len, sizeof(buf) - len, i);
 		len += cctostr(buf + len, sizeof(buf) - len, chain[i]);
 		buf[len++] = '\n';
 		fwrite(buf, 1, len, stdout);
@@ -210,7 +248,7 @@ Info: arity=8 needs 8TB RAM, arity=9 would need 256TB RAM");
 		free(line);
 
 		/* print results */
-		prchain();
+		prchain(!!argi->raw_flag);
 	}
 
 	free(chain);
