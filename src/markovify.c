@@ -83,13 +83,13 @@ addchain(void)
 {
 	size_t k = 0U;
 
-	for (size_t i = nhist; i > 0U;) {
+	for (size_t i = nhist; i < arity; i++) {
 		k *= 32U;
-		k += hist[--i];
+		k += hist[i];
 	}
-	for (size_t i = arity; i > nhist;) {
+	for (size_t i = 0U; i < nhist; i++) {
 		k *= 32U;
-		k += hist[--i];
+		k += hist[i];
 	}
 	/* actually increment the count now */
 	chain[k]++;
@@ -99,12 +99,19 @@ addchain(void)
 static int
 prchain(void)
 {
+/* calculate totals first, use 0 slot to store them */
+	for (size_t i = 0U, n = 1ULL << (5U * arity); i < n; i += 32U) {
+		chain[i] = 0U;
+		for (size_t j = 1U; j < 32U; j++) {
+			chain[i] += chain[i + j];
+		}
+	}
 	for (size_t i = 0U, n = 1ULL << (5U * arity); i < n; i++) {
 		if (LIKELY(!chain[i])) {
 			continue;
 		}
-		for (size_t j = 0, k = 1ULL; j < arity; j++, k <<= 5U) {
-			printf("%zu\t", (i / k) % 32U);
+		for (size_t j = arity; j--;) {
+			printf("%zu\t", (i >> (5U * j)) % 32U);
 		}
 		printf("%zu\n", chain[i]);
 	}
