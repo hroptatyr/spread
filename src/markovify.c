@@ -24,6 +24,9 @@ typedef _Decimal64 qx_t;
 /* hashed prices, most significant digit plus exponent, [0,31) */
 typedef unsigned int hx_t;
 
+/* chain count */
+typedef size_t cc_t;
+
 static size_t arity = 1U;
 
 
@@ -44,15 +47,30 @@ serror(const char *fmt, ...)
 }
 
 static __attribute__((const, pure)) hx_t
-hashpx(px_t p)
+pxtohx(px_t p, int q)
 {
 /* use most significant (base10) digit and exponent, alongside quantum */
 	int e = 0;
-	int q = quantexpd32(p);
 	int v = (int)scalbnd32(frexpd32(p, &e), 1);
 	const int f = (e - q - 1);
 	int x = 10 * f + v - f;
 	return ~(hx_t)((v > 0 && x < 32) - 1U) & (hx_t)x;
+}
+
+static __attribute__((const, pure)) px_t
+hxtopx(hx_t h, int q)
+{
+/* try and reconstruct the upper bound representant that would hash to H */
+	const int e = (h - 1) / 9U;
+	const int v = (h + e) % 10U;
+	const px_t x = scalbnd32(0.df, q);
+	return h ? quantized32(ldexpd32((px_t)v, q + e), x) : nand32("");
+}
+
+static ssize_t
+cctostr(char *restrict buf, size_t bsz, cc_t c)
+{
+	return snprintf(buf, bsz, "%zu", c);
 }
 
 
@@ -60,20 +78,30 @@ hashpx(px_t p)
 static hx_t hist[8U];
 static size_t nhist;
 /* big counting array */
-static size_t *chain;
+static cc_t *chain;
+/* dataset quantum */
+static int qunt;
 
 static int
 push_beef(char *ln, size_t UNUSED(lz))
 {
 	char *on;
 	px_t s = strtopx(ln, &on);
+	int q;
 
 	if (UNLIKELY(*on != '\n')) {
 		/* ignore */
 		return -1;
+	} else if (UNLIKELY(qunt != (q = quantexpd32(s)))) {
+		if (LIKELY(qunt)) {
+			errno = 0, serror("\
+Warning: quantum has changed");
+			return -1;
+		}
+		qunt = q;
 	}
 	/* hash him */
-	hist[nhist] = hashpx(s);
+	hist[nhist] = pxtohx(s, qunt);
 	nhist = (nhist + 1U) % arity;
 	return 0;
 }
@@ -107,13 +135,22 @@ prchain(void)
 		}
 	}
 	for (size_t i = 0U, n = 1ULL << (5U * arity); i < n; i++) {
+		char buf[256U];
+		size_t len = 0U;
+
 		if (LIKELY(!chain[i])) {
 			continue;
 		}
 		for (size_t j = arity; j--;) {
-			printf("%zu\t", (i >> (5U * j)) % 32U);
+			const hx_t h = (i >> (5U * j)) % 32U;
+			const px_t p = hxtopx(h, qunt);
+
+			len += pxtostr(buf + len, sizeof(buf) - len, p);
+			buf[len++] = '\t';
 		}
-		printf("%zu\n", chain[i]);
+		len += cctostr(buf + len, sizeof(buf) - len, chain[i]);
+		buf[len++] = '\n';
+		fwrite(buf, 1, len, stdout);
 	}
 	return 0;
 }
