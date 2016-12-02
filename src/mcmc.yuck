@@ -1,0 +1,3 @@
+Usage: mcmc MODEL [< STATE]
+
+Simulate spreads by MODEL.
