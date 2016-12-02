@@ -8,6 +8,8 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <sys/time.h>
+#include <time.h>
 #if defined HAVE_DFP754_H
 # include <dfp754.h>
 #endif	/* HAVE_DFP754_H */
@@ -230,10 +232,17 @@ boot_state(void)
 }
 
 static int
-init_rng(void)
+init_rng(uint64_t seed)
 {
-	/* not quite random */
-	pcg32_srandom(42U, 54U);
+	uint64_t stid = 0ULL;
+
+	if (!seed) {
+		struct timespec tsp;
+		clock_gettime(CLOCK_MONOTONIC, &tsp);
+		seed = tsp.tv_sec << 30U ^ tsp.tv_nsec;
+		stid = (intptr_t)&seed;
+	}
+	pcg32_srandom(seed, stid);
 	return 0;
 }
 
@@ -307,7 +316,7 @@ Error: cannot read model file `%s'", *argi->args);
 	}
 
 	/* seed the RNG */
-	init_rng();
+	init_rng(argi->seed_arg ? strtoull(argi->seed_arg, NULL, 0) : 0ULL);
 	/* run the simulation */
 	while (!(infer1() < 0));
 

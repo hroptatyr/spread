@@ -1,3 +1,5 @@
 Usage: mcmc MODEL [< STATE]
 
 Simulate spreads by MODEL.
+
+  -S, --seed=X          Seed the rng with X.
