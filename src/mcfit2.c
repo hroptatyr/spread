@@ -26,7 +26,7 @@ typedef long unsigned int tv_t;
 #define NOT_A_TIME	((tv_t)-1ULL)
 #define MSECS		(1000)
 
-/* hashed prices, most significant digit plus exponent, [0,31) */
+/* hashed stamps (ilog2) and spreads (most significant digit plus exponent) */
 typedef unsigned int hx_t;
 
 /* chain count */
@@ -111,6 +111,7 @@ tvtohx(tv_t t)
 static __attribute__((const, pure)) tv_t
 hxtotv(hx_t h)
 {
+#if 0
 /* round them off to good numbers */
 	static tv_t r[] = {
 		0U, 1U, 5U, 10U, 20U, 30U, 60U, 100U,
@@ -121,6 +122,10 @@ hxtotv(hx_t h)
 		259200000U, 604800000U, 1209600000U, 1814400000U,
 	};
 	return r[h];
+#else
+/* turns out we need to read the model back in */
+	return (1ULL << h) - 1ULL;
+#endif
 }
 
 static __attribute__((const, pure)) hx_t
@@ -151,13 +156,21 @@ cctostr(char *restrict buf, size_t bsz, cc_t c)
 }
 
 
-/* limit to arity of 8 (which would consume 8TB of RAM) */
-static hx_t hist[8U];
+/* limit to arity of 4 (which would consume 8TB of RAM) */
+static hx_t hist[4U];
 static size_t nhist;
 /* big counting array */
 static cc_t *chain;
 /* dataset quantum */
 static int qunt;
+
+static inline void
+add_hist(hx_t ht, hx_t hs)
+{
+	hist[nhist++] = ht << 5U ^ hs;
+	nhist %= arity;
+	return;
+}
 
 static int
 push_beef(char *ln, size_t UNUSED(lz))
@@ -188,9 +201,9 @@ Warning: quantum has changed");
 		qunt = q;
 	}
 	/* hash him */
-	hist[nhist++] = tvtohx(t - last);
-	hist[nhist++] = pxtohx(s, qunt);
-	nhist %= 2U * arity;
+	with (hx_t ht = tvtohx(t - last), hs = pxtohx(s, qunt)) {
+		add_hist(ht, hs);
+	}
 	/* store stamp */
 	last = t;
 	return 0;
@@ -201,12 +214,12 @@ add_chain(void)
 {
 	size_t k = 0U;
 
-	for (size_t i = nhist; i < 2U * arity; i++) {
-		k *= 32U;
+	for (size_t i = nhist; i < arity; i++) {
+		k *= 32U * 32U;
 		k += hist[i];
 	}
 	for (size_t i = 0U; i < nhist; i++) {
-		k *= 32U;
+		k *= 32U * 32U;
 		k += hist[i];
 	}
 	/* actually increment the count now */
@@ -223,34 +236,24 @@ prnt_chain(bool rawp)
 	{
 		size_t len = 0U;
 
-		for (size_t j = 2U * arity; j -= 2U;) {
-			hx_t h;
-			tv_t t;
-			px_t p;
+		for (size_t j = arity; --j;) {
+			const hx_t h = (i >> (5U * 2U * j)) % (32U * 32U);
+			const tv_t t = hxtotv(h / 32U);
+			const px_t p = hxtopx(h % 32U, qunt);
 
-			h = (i >> (5U * (j + 1U))) % 32U;
-			t = hxtotv(h);
 			len += tvtostr(buf + len, bsz - len, t);
 			buf[len++] = '\t';
-
-			h = (i >> (5U * (j + 0U))) % 32U;
-			p = hxtopx(h, qunt);
 			len += pxtostr(buf + len, bsz - len, p);
 			buf[len++] = '\t';
 		}
-		/* second to last one */
-		{
-			const hx_t h = (i >> 5U) % 32U;
-			const tv_t t = hxtotv(h);
+		/* last one is special */
+		if (i % (32U * 32U)) {
+			const hx_t h = i % (32U * 32U);
+			const tv_t t = hxtotv(h / 32U);
+			const px_t p = hxtopx(h % 32U, qunt);
 
 			len += tvtostr(buf + len, bsz - len, t);
 			buf[len++] = '\t';
-		}
-		/* last one is special */
-		if (i % 32U) {
-			const hx_t h = i % 32U;
-			const px_t p = hxtopx(h, qunt);
-
 			len += pxtostr(buf + len, bsz - len, p);
 			buf[len++] = '\t';
 		} else {
@@ -264,8 +267,8 @@ prnt_chain(bool rawp)
 	{
 		size_t len = 0U;
 
-		for (size_t j = 2U * arity; j--;) {
-			const hx_t h = (i >> (5U * j)) % 32U;
+		for (size_t j = arity; j--;) {
+			const hx_t h = (i >> (5U * 2U * j)) % (32U * 32U);
 
 			len += snprintf(buf + len, bsz - len, "%u", h);
 			buf[len++] = '\t';
@@ -277,9 +280,10 @@ prnt_chain(bool rawp)
 	ixtostr = !rawp ? ixtopstr : ixtoistr;
 
 	/* calculate totals first, use 0 slot to store them */
-	for (size_t i = 0U, n = 1ULL << (5U * 2U * arity); i < n; i += 32U) {
+	for (size_t i = 0U, n = 1ULL << (5U * 2U * arity); i < n;
+	     i += 32U * 32U) {
 		chain[i] = 0U;
-		for (size_t j = 1U; j < 32U; j++) {
+		for (size_t j = 1U; j < 32U * 32U; j++) {
 			chain[i] += chain[i + j];
 		}
 	}
@@ -318,7 +322,7 @@ main(int argc, char *argv[])
 Error: arity must be strictly positive");
 			rc = 1;
 			goto out;
-		} else if (2U * arity > countof(hist)) {
+		} else if (arity > countof(hist)) {
 			errno = 0, serror("\
 Error: arity value too big\n\
 Info: arity=4 needs 8TB RAM, arity=5 would need 8PB RAM");
