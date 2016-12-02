@@ -1,0 +1,8 @@
+Usage: mcfit2 < STAMPS+SPREADS
+
+Generate a bivariate markov chain from STAMP+SPREADS.
+Each line should contain a numeric time stamp and a spread,
+separated by a tab character.
+
+  --arity=N             Arity of markov chain, default: 1.
+  -r, --raw             Print factor indices, default: representants.
