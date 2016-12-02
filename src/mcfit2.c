@@ -22,7 +22,11 @@ typedef _Decimal64 qx_t;
 #define strtoqx		strtod64
 #define qxtostr		d64tostr
 
-/* hashed prices, most significant digit plus exponent, [0,31) */
+typedef long unsigned int tv_t;
+#define NOT_A_TIME	((tv_t)-1ULL)
+#define MSECS		(1000)
+
+/* hashed stamps (ilog2) and spreads (most significant digit plus exponent) */
 typedef unsigned int hx_t;
 
 /* chain count */
@@ -45,6 +49,83 @@ serror(const char *fmt, ...)
 	}
 	fputc('\n', stderr);
 	return;
+}
+
+static tv_t
+strtotv(const char *ln, char **endptr)
+{
+	char *on;
+	tv_t r;
+
+	/* time value up first */
+	with (long unsigned int s, x) {
+		if (UNLIKELY((s = strtoul(ln, &on, 10), on == ln))) {
+			return NOT_A_TIME;
+		} else if (*on == '.') {
+			char *moron;
+
+			x = strtoul(++on, &moron, 10);
+			if (UNLIKELY(moron - on > 9U)) {
+				return NOT_A_TIME;
+			} else if ((moron - on) % 3U) {
+				/* huh? */
+				return NOT_A_TIME;
+			}
+			switch (moron - on) {
+			case 9U:
+				x /= MSECS;
+			case 6U:
+				x /= MSECS;
+			case 3U:
+				break;
+			case 0U:
+			default:
+				break;
+			}
+			on = moron;
+		} else {
+			x = 0U;
+		}
+		r = s * MSECS + x;
+	}
+	if (LIKELY(endptr != NULL)) {
+		*endptr = on;
+	}
+	return r;
+}
+
+static ssize_t
+tvtostr(char *restrict buf, size_t bsz, tv_t t)
+{
+	return snprintf(buf, bsz, "%lu.%03lu000000", t / MSECS, t % MSECS);
+}
+
+static __attribute__((const, pure)) hx_t
+tvtohx(tv_t t)
+{
+/* just use the base2 log of t (resolution is milliseconds) */
+	unsigned int x = 64U - __builtin_clzll(t);
+	return -(x < 32U) & (hx_t)x;
+}
+
+static __attribute__((const, pure)) tv_t
+hxtotv(hx_t h)
+{
+#if 0
+/* round them off to good numbers */
+	static tv_t r[] = {
+		0U, 1U, 5U, 10U, 20U, 30U, 60U, 100U,
+		200U, 500U, 1000U, 2000U, 5000U, 10000U, 15000U, 30000U,
+		60000U, 120000U, 300000U, 600000U,
+		1200000U, 1800000U, 3600000U, 7200000U,
+		14400000U, 28800000U, 43200000U, 86400000U,
+		259200000U, 604800000U, 1209600000U, 1814400000U,
+	};
+	return r[h];
+#else
+/* turns out we need to read the model back in */
+	return (1ULL << h) - 1ULL;
+#endif
 }
 
 static __attribute__((const, pure)) hx_t
@@ -75,22 +156,40 @@ cctostr(char *restrict buf, size_t bsz, cc_t c)
 }
 
 
-/* limit to arity of 8 (which would consume 8TB of RAM) */
-static hx_t hist[8U];
+/* limit to arity of 4 (which would consume 8TB of RAM) */
+static hx_t hist[4U];
 static size_t nhist;
 /* big counting array */
 static cc_t *chain;
 /* dataset quantum */
 static int qunt;
 
+static inline void
+add_hist(hx_t ht, hx_t hs)
+{
+	hist[nhist++] = ht << 5U ^ hs;
+	nhist %= arity;
+	return;
+}
+
 static int
 push_beef(char *ln, size_t UNUSED(lz))
 {
+	static tv_t last;
 	char *on;
-	px_t s = strtopx(ln, &on);
+	tv_t t;
+	px_t s;
 	int q;
 
-	if (UNLIKELY(*on != '\n')) {
+	if (UNLIKELY((t = strtotv(ln, &on)) == NOT_A_TIME)) {
+		/* yeah right */
+		return -1;
+	} else if (UNLIKELY(*on++ != '\t')) {
+		/* still not ok */
+		return -1;
+	}
+
+	if (UNLIKELY((s = strtopx(on, &on), *on != '\n'))) {
 		/* ignore */
 		return -1;
 	} else if (UNLIKELY(qunt != (q = quantexpd32(s)))) {
@@ -102,8 +201,11 @@ Warning: quantum has changed");
 		qunt = q;
 	}
 	/* hash him */
-	hist[nhist++] = pxtohx(s, qunt);
-	nhist %= arity;
+	with (hx_t ht = tvtohx(t - last), hs = pxtohx(s, qunt)) {
+		add_hist(ht, hs);
+	}
+	/* store stamp */
+	last = t;
 	return 0;
 }
 
@@ -113,11 +215,11 @@ add_chain(void)
 	size_t k = 0U;
 
 	for (size_t i = nhist; i < arity; i++) {
-		k *= 32U;
+		k *= 32U * 32U;
 		k += hist[i];
 	}
 	for (size_t i = 0U; i < nhist; i++) {
-		k *= 32U;
+		k *= 32U * 32U;
 		k += hist[i];
 	}
 	/* actually increment the count now */
@@ -135,17 +237,23 @@ prnt_chain(bool rawp)
 		size_t len = 0U;
 
 		for (size_t j = arity; --j;) {
-			const hx_t h = (i >> (5U * j)) % 32U;
-			const px_t p = hxtopx(h, qunt);
+			const hx_t h = (i >> (5U * 2U * j)) % (32U * 32U);
+			const tv_t t = hxtotv(h / 32U);
+			const px_t p = hxtopx(h % 32U, qunt);
 
+			len += tvtostr(buf + len, bsz - len, t);
+			buf[len++] = '\t';
 			len += pxtostr(buf + len, bsz - len, p);
 			buf[len++] = '\t';
 		}
 		/* last one is special */
-		if (i % 32U) {
-			const hx_t h = i % 32U;
-			const px_t p = hxtopx(h, qunt);
+		if (i % (32U * 32U)) {
+			const hx_t h = i % (32U * 32U);
+			const tv_t t = hxtotv(h / 32U);
+			const px_t p = hxtopx(h % 32U, qunt);
 
+			len += tvtostr(buf + len, bsz - len, t);
+			buf[len++] = '\t';
 			len += pxtostr(buf + len, bsz - len, p);
 			buf[len++] = '\t';
 		} else {
@@ -160,7 +268,7 @@ prnt_chain(bool rawp)
 		size_t len = 0U;
 
 		for (size_t j = arity; j--;) {
-			const hx_t h = (i >> (5U * j)) % 32U;
+			const hx_t h = (i >> (5U * 2U * j)) % (32U * 32U);
 
 			len += snprintf(buf + len, bsz - len, "%u", h);
 			buf[len++] = '\t';
@@ -172,13 +280,14 @@ prnt_chain(bool rawp)
 	ixtostr = !rawp ? ixtopstr : ixtoistr;
 
 	/* calculate totals first, use 0 slot to store them */
-	for (size_t i = 0U, n = 1ULL << (5U * arity); i < n; i += 32U) {
+	for (size_t i = 0U, n = 1ULL << (5U * 2U * arity); i < n;
+	     i += 32U * 32U) {
 		chain[i] = 0U;
-		for (size_t j = 1U; j < 32U; j++) {
+		for (size_t j = 1U; j < 32U * 32U; j++) {
 			chain[i] += chain[i + j];
 		}
 	}
-	for (size_t i = 0U, n = 1ULL << (5U * arity); i < n; i++) {
+	for (size_t i = 0U, n = 1ULL << (5U * 2U * arity); i < n; i++) {
 		char buf[256U];
 		size_t len = 0U;
 
@@ -194,7 +303,7 @@ prnt_chain(bool rawp)
 }
 
 
-#include "mcfit.yucc"
+#include "mcfit2.yucc"
 
 int
 main(int argc, char *argv[])
@@ -216,14 +325,14 @@ Error: arity must be strictly positive");
 		} else if (arity > countof(hist)) {
 			errno = 0, serror("\
 Error: arity value too big\n\
-Info: arity=8 needs 8TB RAM, arity=9 would need 256TB RAM");
+Info: arity=4 needs 8TB RAM, arity=5 would need 8PB RAM");
 			rc = 1;
 			goto out;
 		}
 	}
 
 	/* initialise counting array */
-	with (size_t z = 1ULL << (5U * arity)) {
+	with (size_t z = 1ULL << (5U * 2U * arity)) {
 		chain = calloc(z, sizeof(*chain));
 
 		if (UNLIKELY(chain == NULL)) {
@@ -259,4 +368,4 @@ out:
 	return rc;
 }
 
-/* mcfit.c ends here */
+/* mcfit2.c ends here */

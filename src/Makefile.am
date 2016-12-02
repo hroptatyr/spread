@@ -38,6 +38,17 @@ mcfit_LDFLAGS += $(dfp754_LIBS)
 mcfit_LDADD = libdfp.a
 BUILT_SOURCES += mcfit.yucc
 
+bin_PROGRAMS += mcfit2
+mcfit2_SOURCES = mcfit2.c mcfit2.yuck
+mcfit2_SOURCES += version.c version.h
+mcfit2_CPPFLAGS = $(AM_CPPFLAGS)
+mcfit2_CPPFLAGS += $(dfp754_CFLAGS)
+mcfit2_CPPFLAGS += -DHAVE_VERSION_H
+mcfit2_LDFLAGS = $(AM_LDFLAGS)
+mcfit2_LDFLAGS += $(dfp754_LIBS)
+mcfit2_LDADD = libdfp.a
+BUILT_SOURCES += mcfit2.yucc
+
 bin_PROGRAMS += mcmc
 mcmc_SOURCES = mcmc.c mcmc.yuck
 mcmc_SOURCES += version.c version.h
@@ -49,6 +60,18 @@ mcmc_LDFLAGS = $(AM_LDFLAGS)
 mcmc_LDFLAGS += $(dfp754_LIBS)
 mcmc_LDADD = libdfp.a
 BUILT_SOURCES += mcmc.yucc
+
+bin_PROGRAMS += mcmc2
+mcmc2_SOURCES = mcmc2.c mcmc2.yuck
+mcmc2_SOURCES += version.c version.h
+mcmc2_SOURCES += pcg_basic.c pcg_basic.h
+mcmc2_CPPFLAGS = $(AM_CPPFLAGS)
+mcmc2_CPPFLAGS += $(dfp754_CFLAGS)
+mcmc2_CPPFLAGS += -DHAVE_VERSION_H
+mcmc2_LDFLAGS = $(AM_LDFLAGS)
+mcmc2_LDFLAGS += $(dfp754_LIBS)
+mcmc2_LDADD = libdfp.a
+BUILT_SOURCES += mcmc2.yucc
 
 
 ## version rules
