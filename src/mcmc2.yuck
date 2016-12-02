@@ -1,0 +1,5 @@
+Usage: mcmc2 MODEL [< STATE]
+
+Simulate stamps and spreads by MODEL.
+
+  -S, --seed=X          Seed the rng with X.
