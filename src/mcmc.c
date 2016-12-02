@@ -222,9 +222,9 @@ boot_state(void)
 	size_t llen = 0UL;
 	ssize_t nrd;
 
-	while ((nrd = getline(&line, &llen, stdin)) > 0 && nhist < arity) {
-		(void)push_beef(line, nrd);
-	}
+	for (size_t i = 0U;
+	     i < arity && (nrd = getline(&line, &llen, stdin)) > 0;
+	     i += !(push_beef(line, nrd) < 0));
 
 	free(line);
 	fclose(stdin);
